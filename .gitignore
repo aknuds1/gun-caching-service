@@ -1,0 +1,10 @@
+node_modules/
+npm-debug.log
+settings.json
+__pycache__
+*.pem
+.DS_Store
+*.crt
+*.key
+*.pem
+radata/

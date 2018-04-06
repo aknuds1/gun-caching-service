@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+import atexit
+import shutil
+import subprocess
+import json
+import sys
+import tempfile
+import time
+import os.path
+from pprint import pformat
+import argparse
+import signal
+
+
+_has_terminated = False
+
+
+def _info(msg):
+    sys.stdout.write('* {}\n'.format(msg))
+    sys.stdout.flush()
+
+
+def _error(msg):
+    sys.stderr.write('* {}\n'.format(msg))
+    sys.exit(1)
+
+
+def _terminate(exit_process=True):
+    if _args.mode != 'docker':
+        _proc.terminate()
+    else:
+        attempt = 0
+        max_attempts = 10
+        while attempt < max_attempts:
+            stdout = subprocess.run(
+                ['docker', 'inspect', _container_name], stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT
+            ).stdout.decode().lower()
+            if 'no such object' in stdout:
+                _info('Docker container not yet active, waiting...')
+                attempt += 1
+                time.sleep(1)
+            else:
+                break
+        if attempt < max_attempts:
+            _info('Killing Docker container')
+            subprocess.check_call(
+                ['docker', 'kill', _container_name, ],
+                stdout=subprocess.DEVNULL,
+            )
+
+    try:
+        _proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        _info('Docker seems stuck - killing it')
+        _proc.kill()
+
+    global _has_terminated
+    _has_terminated = True
+
+    if exit_process:
+        sys.exit(0)
+
+
+def _handle_sigterm(signum, frame):
+    _info('Handling sigterm')
+    _terminate()
+
+
+os.chdir(os.path.abspath(os.path.join(os.path.dirname(__file__))))
+
+
+def _main():
+    global _args, _proc, _container_name
+
+    cl_parser = argparse.ArgumentParser(description='Run Node server')
+    cl_parser.add_argument(
+        '-m', '--mode', choices=['live', 'dist', 'docker'], default='live',
+        help='Choose execution mode',
+    )
+    cl_parser.add_argument(
+        '-b', '--build', default=False, action='store_true',
+        help='Build before executing'
+    )
+    cl_parser.add_argument(
+        '--debug', '-d', help='Debug through node-inspector',
+        action='store_true', default=False,
+    )
+    cl_parser.add_argument(
+        '--test', '-t', help='Enable test mode', action='store_true',
+        default=False,
+    )
+    _args = cl_parser.parse_args()
+
+    try:
+        with open('settings.json', 'rt') as f:
+            settings = json.load(f)
+    except IOError:
+        _error('settings.json doesn\'t exist')
+    for k, v in settings.items():
+        os.environ[k] = v
+
+    if not _args.debug:
+        node_args = []
+    else:
+        node_args = ['--inspect', '--debug-brk', ]
+    if _args.test:
+        os.environ['APP_ENVIRONMENT'] = 'test'
+
+    _container_name = None
+    if _args.mode == 'live':
+        # Remove unwanted environment variables
+        for key in ['RETHINKDB_TLS_CA_PATH']:
+            try:
+                del os.environ[key]
+            except KeyError:
+                pass
+        command = ['node'] + node_args + ['.']
+    elif _args.mode == 'dist':
+        if _args.build:
+            subprocess.check_call(['./node_modules/.bin/gulp', ])
+        command = ['node'] + node_args + ['dist/app/server/server.js']
+    elif _args.mode == 'docker':
+        mount_dpath = None
+        image_name = 'eu.gcr.io/experimental-berlin/database-service'
+        if _args.build:
+            subprocess.check_call(
+                ['docker', 'build', '-t', image_name, '.', ]
+            )
+        os.environ['PORT'] = '9000'
+        os.environ['RETHINKDB_HOSTS'] = \
+            'rethinkdb-production-worker-0.rethinkdb.experimental.berlin,' \
+            'rethinkdb-production-worker-1.rethinkdb.experimental.berlin'
+        os.environ['RETHINKDB_PORT'] = '30015'
+        _container_name = uuid.uuid4().hex
+        command = [
+            'docker', 'run', '--rm', '-h', 'localhost', '-p', ':9000',
+            '--name', _container_name,
+        ]
+        if _args.test:
+            mount_dpath = os.path.abspath(tempfile.mkdtemp(dir='.'))
+            atexit.register(lambda: shutil.rmtree(mount_dpath))
+            command.extend([
+                '--mount',
+                'type=bind,source={},target=/var/emails'.format(mount_dpath),
+            ])
+        for key in list(settings) + [
+            'APP_ENVIRONMENT', 'PORT', 'RETHINKDB_HOSTS',
+            'RETHINKDB_PORT', 'RETHINKDB_DATABASE',
+        ]:
+            command.extend(['-e', key, ])
+        command.append(image_name)
+
+    _proc = None
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
+    _info('Launching server in {} mode'.format(_args.mode))
+    _proc = subprocess.Popen(command, env=os.environ)
+    try:
+        if _args.mode == 'docker':
+            attempt = 0
+            while attempt < 10:
+                stdout = subprocess.run(
+                    ['docker', 'inspect', _container_name],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+                ).stdout.decode().lower()
+                if 'no such object' in stdout:
+                    _info('Waiting for Docker container to become active')
+                    attempt += 1
+                    time.sleep(1)
+                else:
+                    docker_obj = json.loads(stdout)[0]
+                    break
+            else:
+                _error(
+                    'Timed out waiting for Docker container to become active'
+                )
+
+            try:
+                port = docker_obj['networksettings']['ports']['9000/tcp'][0][
+                    'hostport']
+            except KeyError:
+                raise Exception('Cant\'t find container port: {}'.format(
+                    pformat(docker_obj['networksettings']['ports'])
+                ))
+            if mount_dpath is None:
+                _info('Container is listening on port {}'.format(port))
+            else:
+                _info(
+                    'Container is listening on port {} and writing to {}'
+                    .format(port, mount_dpath)
+                )
+
+        exitcode = _proc.wait()
+        if exitcode > 0:
+            _error('Node failed with code {}'.format(exitcode))
+        else:
+            _info('Server exited successfully')
+    except BaseException as exc:
+        is_benevolent = isinstance(exc, KeyboardInterrupt)
+        if not _has_terminated:
+            _info('Terminating server...')
+            _terminate(exit_process=is_benevolent)
+
+        if not is_benevolent:
+            raise
+
+
+_main()
