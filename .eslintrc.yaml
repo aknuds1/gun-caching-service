@@ -1,0 +1,24 @@
+---
+parserOptions:
+  ecmaVersion: 8
+  sourceType: "module"
+env:
+  commonjs: true
+  node: true
+  browser: true
+rules:
+  strict:
+    - 2
+    - "global"
+  comma-dangle:
+    - 2
+    - "always"
+  quotes:
+    - 2
+    - "single"
+    -
+      allowTemplateLiterals: true
+  new-cap: 0
+  camelcase: 0
+  no-unused-vars: "error"
+  no-undef: "error"

@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package gunCachingService;
+
+service GunCachingService {
+  rpc ping (Empty) returns (Empty);
+  rpc getEntry (GetEntryParams) returns (Entry);
+  rpc setEntry (SetEntryParams) returns (Empty);
+  rpc deleteEntry (DeleteEntryParams) returns (Empty);
+}
+
+message Empty {}
+
+message Entry {
+  string value = 1;
+}
+
+message GetEntryParams {
+  repeated string path = 1;
+}
+
+message SetEntryParams {
+  repeated string path = 1;
+  string value = 2;
+}
+
+message DeleteEntryParams {
+  repeated string path = 1;
+}
