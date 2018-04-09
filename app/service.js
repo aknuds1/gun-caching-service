@@ -11,6 +11,14 @@ const fromPairs = require('ramda/src/fromPairs')
 const TypedError = require('error/typed')
 const forEach = require('ramda/src/forEach')
 const assert = require('assert')
+const http = require('http')
+const Gun = require('gun')
+const dns = require('dns')
+const Promise = require('bluebird')
+const merge = require('ramda/src/merge')
+const os = require('os')
+const filter = require('ramda/src/filter')
+const {isNullOrBlank,} = require('@arve.knudsen/stringutils')
 
 const getConfig = require('./getConfig')
 const sendEmail = require('./sendEmail')
@@ -65,11 +73,12 @@ const implementationError = TypedError({
   code: grpc.status.INTERNAL,
 })
 
-const callNonStreamingHandler = async (name, handler, callback, request) => {
+const callNonStreamingHandler = async (name, handler, callback, request, gun) => {
+  t.Object(gun, ['gun',])
   logger.debug(`Calling non-streaming handler for method ${name}`)
   let resp
   try {
-    resp = await handler(request)
+    resp = await handler(merge(request, {gun,}))
   } catch (error) {
     if (error.type == null) {
       logger.debug(`Handler threw an unexpected exception:`, error)
@@ -97,23 +106,62 @@ const callNonStreamingHandler = async (name, handler, callback, request) => {
   callback(null, resp)
 }
 
-const wrapApi = () => {
+const wrapApi = (gun) => {
+  t.Object(gun, ['gun',])
   return pipe(
     toPairs,
     map(([name, handler,]) => {
       return [name, (call, callback) => {
         assert.equal(call.write, null)
-        callNonStreamingHandler(name, handler, callback, call.request)
+        callNonStreamingHandler(name, handler, callback, call.request, gun)
       },]
     }),
     fromPairs
   )(api)
 }
 
+const discoverPeers = async () => {
+  let peers
+  try {
+    peers = await Promise.promisify(dns.lookup)('gun-caching-service-peer-discovery', {all: true,})
+  } catch (error) {
+    logger.debug(`Couldn't detect any peers due to error: ${error.message}`)
+    return []
+  }
+
+  const hostname = os.hostname()
+  assert.ok(!isNullOrBlank(hostname))
+  const ownIp = await Promise.promisify(dns.lookup)(hostname)
+  t.String(ownIp, ['ownIp',])
+  assert.ok(!isNullOrBlank(ownIp))
+  return map((peer) => {
+    return `http://${peer.address}:8080`
+  }, filter((peer) => {
+    return peer.address !== ownIp
+  }, peers))
+}
+
 const provision = async () => {
-  logger.debug(`Starting server...`)
+  logger.debug(`Starting service...`)
   const config = await getConfig()
-  const wrappedApi = wrapApi()
+
+  const peers = await discoverPeers()
+  t.Array(peers, ['peers',])
+  logger.debug(`Connecting to GUN peers`, peers)
+  const gunServer = http.createServer()
+  gunServer.listen(8080)
+  logger.info(`GUN database server running at ${config.appUri}:8080`)
+  const gun = Gun({
+    localStorage: false,
+    file: config.databaseFile,
+    web: gunServer,
+    peers,
+  })
+  gun.get('catbox').on(() => {
+    logger.debug(`Incoming changes`)
+  })
+
+  const wrappedApi = wrapApi(gun)
   const server = new grpc.Server()
   server.addService(proto.GunCachingService.service, wrappedApi)
   server.bind(`0.0.0.0:${config.port}`, grpc.ServerCredentials.createSsl(
@@ -121,7 +169,7 @@ const provision = async () => {
       {private_key: Buffer.from(config.grpcTlsKey), cert_chain: Buffer.from(config.grpcTlsCert),},
   ], true))
   server.start()
-  logger.info(`Server running at ${config.appUri}:${config.port}`)
+  logger.info(`Service available at ${config.appUri}:${config.port}`)
 }
 
 provision()

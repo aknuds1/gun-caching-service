@@ -10,8 +10,6 @@ const t = require('tcomb')
 const S = require('underscore.string.fp')
 const pick = require('ramda/src/pick')
 
-const getConfig = require('./getConfig')
-
 const badRequestError = TypedError({
   type: 'badRequestError',
   message: 'Bad Request',
@@ -19,22 +17,14 @@ const badRequestError = TypedError({
 })
 
 const generateKeys = (path) => {
-  return [S.join('/', path.slice(0, -1)), path[path.length - 1],]
-}
-
-const getGun = async () => {
-  const config = await getConfig()
-  return Gun({
-    localStorage: false,
-    file: config.databaseFile,
-  })
+  return [path[0], S.join('/', path.slice(1)),]
 }
 
 const ping = () => {
   logger.debug(`Received ping request`)
 }
 
-const getEntry = async ({path,}) => {
+const getEntry = async ({gun, path,}) => {
   t.Array(path, ['path',])
   if (isEmpty(path)) {
     logger.debug(`Path should be an array`)
@@ -42,14 +32,13 @@ const getEntry = async ({path,}) => {
   }
   logger.debug(`Received getEntry request for path`, path)
   const [rootKey, itemKey,] = generateKeys(path)
-  const gun = await getGun()
   const envelope = await new Promise((resolve) => {
     gun.get(rootKey).get(itemKey).once(resolve)
   })
   return pick(['item', 'ttl', 'stored',], envelope)
 }
 
-const setEntry = async ({path, item, ttl,}) => {
+const setEntry = async ({gun, path, item, ttl,}) => {
   t.Array(path, ['path',])
   t.String(item, ['item',])
   if (isEmpty(path)) {
@@ -57,7 +46,6 @@ const setEntry = async ({path, item, ttl,}) => {
     throw badRequestError()
   }
   logger.debug(`Received setEntry request for path`, path)
-  const gun = await getGun()
   const envelope = {
     item,
     stored: Date.now(),
@@ -72,7 +60,7 @@ const setEntry = async ({path, item, ttl,}) => {
   })
 }
 
-const deleteEntry = async ({path,}) => {
+const deleteEntry = async ({gun, path,}) => {
   t.Array(path, ['path',])
   if (isEmpty(path)) {
     logger.debug(`Path should be an array`)
@@ -80,7 +68,6 @@ const deleteEntry = async ({path,}) => {
   }
   logger.debug(`Received deleteEntry request for path`, path)
   const [rootKey, itemKey,] = generateKeys(path)
-  const gun = await getGun()
   return await new Promise((resolve) => {
     // XXX: put(null) doesn't call the callback due to a bug in GUN
     gun.get(rootKey).get(itemKey).put(null)
