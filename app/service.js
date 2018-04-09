@@ -135,7 +135,7 @@ const discoverPeers = async () => {
   t.String(ownIp, ['ownIp',])
   assert.ok(!isNullOrBlank(ownIp))
   return map((peer) => {
-    return `http://${peer.address}:8080`
+    return `http://${peer.address}:9001`
   }, filter((peer) => {
     return peer.address !== ownIp
   }, peers))
@@ -149,8 +149,8 @@ const provision = async () => {
   t.Array(peers, ['peers',])
   logger.debug(`Connecting to GUN peers`, peers)
   const gunServer = http.createServer()
-  gunServer.listen(8080)
-  logger.info(`GUN database server running at ${config.appUri}:8080`)
+  gunServer.listen(9001)
+  logger.info(`GUN database server running at ${config.appUri}:9001`)
   const gun = Gun({
     localStorage: false,
     file: config.databaseFile,
