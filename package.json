@@ -1,6 +1,6 @@
 {
   "name": "@arve.knudsen/gun-caching-service",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "GUN Caching Service",
   "main": "app/service.js",
   "scripts": {
