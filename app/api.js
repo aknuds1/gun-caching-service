@@ -1,5 +1,4 @@
 const logger = require('@arve.knudsen/js-logger').get('service.api')
-const Gun = require('gun')
 require('gun/lib/later')
 require('gun/lib/path.js')
 const Promise = require('bluebird')
