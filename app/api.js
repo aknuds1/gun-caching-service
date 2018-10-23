@@ -1,6 +1,7 @@
 const logger = require('@arve.knudsen/js-logger').get('service.api')
 require('gun/lib/later')
-require('gun/lib/path.js')
+require('gun/lib/path')
+require('gun/lib/then')
 const Promise = require('bluebird')
 const TypedError = require('error/typed')
 const grpc = require('grpc')
@@ -29,6 +30,7 @@ const getEntry = async ({gun, path,}) => {
     logger.debug(`Path should be an array`)
     throw badRequestError()
   }
+
   logger.debug(`Received getEntry request for path`, path)
   const [rootKey, itemKey,] = generateKeys(path)
   const envelope = await new Promise((resolve) => {
@@ -44,6 +46,7 @@ const setEntry = async ({gun, path, item, ttl,}) => {
     logger.debug(`Path should be an array`)
     throw badRequestError()
   }
+
   logger.debug(`Received setEntry request for path`, path)
   const envelope = {
     item,
@@ -51,12 +54,10 @@ const setEntry = async ({gun, path, item, ttl,}) => {
     ttl,
   }
   const [rootKey, itemKey,] = generateKeys(path)
-  await new Promise((resolve) => {
-    gun.get(rootKey).get(itemKey).put(envelope, resolve).later(() => {
-      logger.debug(`Deleting envelope with key ${rootKey}.${itemKey}`)
-      gun.get(rootKey).get(itemKey).put(null)
-    }, ttl)
-  })
+  await gun.get(rootKey).get(itemKey).put(envelope).later(() => {
+    logger.debug(`Deleting envelope with key ${rootKey}.${itemKey}`)
+    gun.get(rootKey).get(itemKey).put(null)
+  }, ttl).then()
 }
 
 const deleteEntry = async ({gun, path,}) => {
@@ -67,11 +68,7 @@ const deleteEntry = async ({gun, path,}) => {
   }
   logger.debug(`Received deleteEntry request for path`, path)
   const [rootKey, itemKey,] = generateKeys(path)
-  return await new Promise((resolve) => {
-    // XXX: put(null) doesn't call the callback due to a bug in GUN
-    gun.get(rootKey).get(itemKey).put(null)
-    resolve()
-  })
+  return await gun.get(rootKey).get(itemKey).put(null).then()
 }
 
 module.exports = {
