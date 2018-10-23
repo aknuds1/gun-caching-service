@@ -8,7 +8,6 @@ const grpc = require('grpc')
 const isEmpty = require('ramda/src/isEmpty')
 const t = require('tcomb')
 const S = require('underscore.string.fp')
-const pick = require('ramda/src/pick')
 
 const badRequestError = TypedError({
   type: 'badRequestError',
@@ -36,12 +35,26 @@ const getEntry = async ({gun, path,}) => {
   const envelope = await new Promise((resolve) => {
     gun.get(rootKey).get(itemKey).once(resolve)
   })
-  return envelope != null ? pick(['item', 'ttl', 'stored',], envelope) : {}
+  if (envelope != null) {
+    t.String(envelope.item, ['envelope', 'item',])
+    t.Number(envelope.ttl, ['envelope', 'ttl',])
+    t.Number(envelope.stored, ['envelope', 'stored',])
+    return {
+      item: envelope.item,
+      ttl: envelope.ttl,
+      stored: {
+        seconds: envelope.stored / 1000,
+      },
+    }
+  } else {
+    return {}
+  }
 }
 
 const setEntry = async ({gun, path, item, ttl,}) => {
   t.Array(path, ['path',])
   t.String(item, ['item',])
+  t.Number(ttl, ['ttl',])
   if (isEmpty(path)) {
     logger.debug(`Path should be an array`)
     throw badRequestError()

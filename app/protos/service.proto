@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "google/protobuf/timestamp.proto";
+
 package gunCachingService;
 
 service GunCachingService {
@@ -13,8 +15,8 @@ message Empty {}
 
 message Entry {
   string item = 1;
-  uint64 ttl = 2;
-  uint64 stored = 3;
+  uint32 ttl = 2;
+  Timestamp stored = 3;
 }
 
 message GetEntryParams {
@@ -24,7 +26,7 @@ message GetEntryParams {
 message SetEntryParams {
   repeated string path = 1;
   string item = 2;
-  uint64 ttl = 3;
+  uint32 ttl = 3;
 }
 
 message DeleteEntryParams {
