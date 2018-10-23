@@ -1,6 +1,6 @@
 {
   "name": "@arve.knudsen/gun-caching-service",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "GUN Caching Service",
   "main": "app/service.js",
   "scripts": {
@@ -27,7 +27,6 @@
     "gun": "^0.9.99997",
     "luxon": "^1.4.4",
     "mandrill-api": "^1.0.45",
-    "npm": "^5.10.0",
     "ramda": "^0.25.0",
     "tcomb": "^3.2.27"
   },
