@@ -1,4 +1,5 @@
 const grpc = require('grpc')
+const protoLoader = require('@grpc/proto-loaderß')
 const Logger = require('@arve.knudsen/js-logger')
 const logger = Logger.get('service')
 const t = require('tcomb')
@@ -23,8 +24,6 @@ const {isNullOrBlank,} = require('@arve.knudsen/stringutils')
 const getConfig = require('./getConfig')
 const sendEmail = require('./sendEmail')
 const api = require('./api')
-
-const proto = grpc.load(path.join(__dirname, './protos/service.proto')).gunCachingService
 
 Logger.useDefaults({
   formatter: (messages, context) => {
@@ -145,6 +144,9 @@ const provision = async () => {
   logger.debug(`Starting service...`)
   const config = await getConfig()
 
+  const pkgDef = await protoLoader.load(path.join(__dirname, './protos/service.proto'))
+  const {GunCachingService,} = grpc.loadPackageDefinition(pkgDef).gunCachingService
+
   const peers = await discoverPeers()
   t.Array(peers, ['peers',])
   logger.debug(`Connecting to GUN peers`, peers)
@@ -163,7 +165,7 @@ const provision = async () => {
 
   const wrappedApi = wrapApi(gun)
   const server = new grpc.Server()
-  server.addService(proto.GunCachingService.service, wrappedApi)
+  server.addService(GunCachingService.service, wrappedApi)
   server.bind(`0.0.0.0:${config.port}`, grpc.ServerCredentials.createSsl(
     Buffer.from(config.grpcTlsCa), [
       {private_key: Buffer.from(config.grpcTlsKey), cert_chain: Buffer.from(config.grpcTlsCert),},

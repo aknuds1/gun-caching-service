@@ -7,6 +7,6 @@ EXPOSE 9000
 
 COPY package.json .
 COPY package-lock.json .
-COPY .npmrc .
+RUN npm i npm@latest -g
 RUN npm install --production
 COPY ./ .
