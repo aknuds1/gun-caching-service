@@ -1,5 +1,5 @@
 const grpc = require('grpc')
-const protoLoader = require('@grpc/proto-loaderß')
+const protoLoader = require('@grpc/proto-loader')
 const Logger = require('@arve.knudsen/js-logger')
 const logger = Logger.get('service')
 const t = require('tcomb')
