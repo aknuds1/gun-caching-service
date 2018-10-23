@@ -36,7 +36,7 @@ const getEntry = async ({gun, path,}) => {
   const envelope = await new Promise((resolve) => {
     gun.get(rootKey).get(itemKey).once(resolve)
   })
-  return envelope != null ? pick(['item', 'ttl', 'stored',], envelope) : undefined
+  return envelope != null ? pick(['item', 'ttl', 'stored',], envelope) : {}
 }
 
 const setEntry = async ({gun, path, item, ttl,}) => {

@@ -153,6 +153,7 @@ const provision = async () => {
   const gunServer = http.createServer()
   gunServer.listen(9001)
   logger.info(`GUN database server running at ${config.appUri}:9001`)
+  logger.debug(`Gun database file: ${config.databaseFile}`)
   const gun = Gun({
     localStorage: false,
     file: config.databaseFile,
